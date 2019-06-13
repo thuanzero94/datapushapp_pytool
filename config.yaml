@@ -1,0 +1,12 @@
+serverInfo:
+  host: 203.125.109.123
+  port: 1883
+  username: datafeed
+  password: Datafeed#18
+
+dataInfo:
+  datachanged_bind_Key: datachanged
+  datachanged_queue_name: price.img-fx.com_alantest
+  datachanged_qos: 0
+
+logFileName: datafirstlog.log
