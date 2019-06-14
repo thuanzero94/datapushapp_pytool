@@ -1,0 +1,22 @@
+#Tested on Python 3.6
+
+# Description:
+	- Is the data updater
+	- Will get data from Rabbit Server by MQTT Protocol and Save to log file
+	- Configure via yaml file:
+		. rabbit server Info
+		. Connection Info
+		. Log file
+		. Turn on/off debug
+	
+# Requirement
+	pip install paho-mqtt
+	pip install pyyaml
+
+# Test Scenario
+1. Run tool
+ - Command run:
+	$ python streamer_python.py
+ - Run start.bat file	
+
+

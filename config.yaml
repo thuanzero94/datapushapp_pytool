@@ -7,6 +7,9 @@ serverInfo:
 dataInfo:
   datachanged_bind_Key: datachanged
   datachanged_queue_name: price.img-fx.com_alantest
-  datachanged_qos: 0
+  datachanged_qos: 1
 
-logFileName: datafirstlog.log
+logFileName: datachanged.log
+
+# Show console log : Enable/Disable - 1/0
+debug: 1
