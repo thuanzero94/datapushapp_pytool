@@ -65,7 +65,12 @@ except:
     exit(-1)
 
 
+db_config = read_db_config()
+conn = MySQLConnection(**db_config)
+
+
 def query_book(f, symbol, book='quote', type='insert'):
+    global conn, db_config
     if book == 'quote':
         if type == 'insert':
             query = "INSERT INTO quote(`symbol`, `bid`, `last`, `ask`, `change`, `high`, `low`, `open`, `prev_close`, `time`)" \
@@ -83,75 +88,80 @@ def query_book(f, symbol, book='quote', type='insert'):
 
 
     try:
-        db_config = read_db_config()
-        conn = MySQLConnection(**db_config)
+        # db_config = read_db_config()
+        # conn = MySQLConnection(**db_config)
+        if conn:
+            cursor = conn.cursor()
+            cursor.execute(query, val)
 
-        cursor = conn.cursor()
-        cursor.execute(query, val)
+            # if cursor.lastrowid:
+            #     print('last insert id', cursor.lastrowid)
+            # else:
+            #     print('last insert id not found')
 
-        # if cursor.lastrowid:
-        #     print('last insert id', cursor.lastrowid)
-        # else:
-        #     print('last insert id not found')
-
-        conn.commit()
+            conn.commit()
+        else:
+            conn = MySQLConnection(**db_config)
     except Error as error:
         print(error)
         return 0
     finally:
         cursor.close()
-        conn.close()
-    # cursor.close()
-    # conn.close()
+    #     conn.close()
 
 
 def delete_quotelog(time_interval, limit):
+    global conn, db_config
     q_select = "SELECT priceid FROM quotelog WHERE timestamp < (UNIX_TIMESTAMP() - {} * 60) LIMIT {}".format(time_interval, limit)
     try:
-        db_config = read_db_config()
-        conn = MySQLConnection(**db_config)
+        # db_config = read_db_config()
+        # conn = MySQLConnection(**db_config)
+        if conn:
+            cursor = conn.cursor()
+            cursor.execute(q_select)
 
-        cursor = conn.cursor()
-        cursor.execute(q_select)
-
-        result = cursor.fetchall()
-        # print("$$$$$$$$$$$$$$$$$$$$$$$$$$ {}".format(len(result)))
-        for x in result:
-            # print(x[0])
-            query = "DELETE FROM quotelog WHERE priceid={}".format(x[0])
-            # print(query)
-            cursor.execute(query)
-        conn.commit()
+            result = cursor.fetchall()
+            # print("$$$$$$$$$$$$$$$$$$$$$$$$$$ {}".format(len(result)))
+            for x in result:
+                # print(x[0])
+                query = "DELETE FROM quotelog WHERE priceid={}".format(x[0])
+                # print(query)
+                cursor.execute(query)
+            conn.commit()
+        else:
+            conn = MySQLConnection(**db_config)
     except Error as error:
         print(error)
         return 0
     finally:
         cursor.close()
-        conn.close()
-    # cursor.close()
-    # conn.close()
+    #     conn.close()
 
 
 def update_database(f, symbol):
+    global conn, db_config
     # print(symbol)
     # print(f)
     query = "SELECT * FROM {} WHERE symbol ='{}'".format('quote', symbol)
     try:
-        db_config = read_db_config()
-        cnx = MySQLConnection(**db_config)
-        cursor = cnx.cursor()
-        cursor.execute(query)
-        if len(cursor.fetchall()) == 0:
-            # print('Create New %s' % symbol)
-            query_book(f, symbol, 'quote', 'insert')
+        # db_config = read_db_config()
+        # conn = MySQLConnection(**db_config)
+        if conn:
+            cursor = conn.cursor()
+            cursor.execute(query)
+            if len(cursor.fetchall()) == 0:
+                # print('Create New %s' % symbol)
+                query_book(f, symbol, 'quote', 'insert')
+            else:
+                # print('%s exist' % symbol)
+                query_book(f, symbol, 'quote', 'update')
         else:
-            # print('%s exist' % symbol)
-            query_book(f, symbol, 'quote', 'update')
+            conn = MySQLConnection(**db_config)
     except Error as e:
         print(e)
         return 0
     cursor.close()
-    cnx.close()
+    # conn.close()
 
     # Insert to querylog table
     query_book(f, symbol, 'quotelog', 'insert')
@@ -173,13 +183,6 @@ def datachanged_on_message(client, userdata, message):
     # print(symbol_key)
     # Update to database
     update_database(symbol_data, symbol_key)
-    # print(msg_json['symbols'].keys())
-    # for key in msg_json["symbols"].keys():
-    #     l_symbols[key] = msg
-    # # Write to file
-    # result_file.seek(0)
-    # for key in l_symbols.keys():
-    #     result_file.write(l_symbols[key] + "\r\n")
     print('total time: {}'.format(time.time() - start))
 
 
@@ -236,7 +239,7 @@ def main():
         # pp.pprint(l_symbols)
         # print("\n%%%%%%%%%%%%%%%\n")
         # datafirst_log.write(msg)
-        time.sleep(0.1)
+        time.sleep(1)
 
     print("Closed!")
     result_file.close()
