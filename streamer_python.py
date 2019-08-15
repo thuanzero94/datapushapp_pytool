@@ -6,10 +6,8 @@ import random
 import pprint
 from configparser import ConfigParser
 from mysql.connector import MySQLConnection, Error
-
-
-# pp = pprint.PrettyPrinter(indent=2) #print pretty json
-# yaml.warnings({'YAMLLoadWarning': False})
+import threading
+import datetime
 
 
 def read_db_config(filename='config.ini', section='sql_info'):
@@ -34,7 +32,7 @@ def read_db_config(filename='config.ini', section='sql_info'):
     return db
 
 
-uid = random.randint(1, 1000000)
+uid = time.time()
 logInfo = read_db_config(section='logInfo')
 severInfo = read_db_config(section='serverInfo')
 dataInfo = read_db_config(section='dataInfo')
@@ -46,7 +44,7 @@ DELETE_LIMIT = sqlOption['delete_limit']
 # print(logInfo)
 
 db_config = read_db_config(section='sql_info')
-conn = MySQLConnection(**db_config)
+# conn = MySQLConnection(**db_config)
 
 
 def my_print(d):
@@ -59,8 +57,7 @@ def my_print(d):
         print(d)
 
 
-def query_book(f, symbol, book='quote', type='insert'):
-    global conn, db_config
+def query_book(conn, f, symbol, book='quote', type='insert'):
     if book == 'quote':
         if type == 'insert':
             query = "INSERT INTO quote(`symbol`, `bid`, `last`, `ask`, `change`, `high`, `low`, `open`, `prev_close`, `time`, `timestamp`)" \
@@ -75,76 +72,119 @@ def query_book(f, symbol, book='quote', type='insert'):
             query = "INSERT INTO quotelog(`symbol`, `bid`, `last`, `ask`, `change`, `high`, `low`, `open`, `prev_close`, `time`, `timestamp`)" \
                     "VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), UNIX_TIMESTAMP())"
             val = (symbol, f['bid'], f['last'], f['ask'], f['change'], f['high'], f['low'], f['open'], f['close'])
-        elif type == 'delete':
-            global DELETE_TIME_INTERVAL, DELETE_LIMIT
-            query = "SELECT priceid FROM quotelog WHERE timestamp < (UNIX_TIMESTAMP() - {} * 60) LIMIT {}".format(
-                DELETE_TIME_INTERVAL, DELETE_LIMIT)
-
     try:
-        # db_config = read_db_config()
-        # conn = MySQLConnection(**db_config)
-        if book == 'quotelog' and type == 'delete':
-            cursor = conn.cursor()
-            cursor.execute(query)
-            result = cursor.fetchall()
-            # print("$$$$$$$$$$$$$$$$$$$$$$$$$$ {}".format(len(result)))
-            if len(result) > 499:
-                # my_print('type: {} - {}\n {} - {}'.format(len(result), result, result[0][0], result[-1][0]))
-                d_query = "DELETE FROM quotelog WHERE priceid BETWEEN {} and {}".format(result[0][0], result[-1][0])
-                my_print(d_query)
-                cursor.execute(d_query)
-                conn.commit
-                # for x in result:
-                #     # print(x[0])
-                #     d_query = "DELETE FROM quotelog WHERE priceid={}".format(x[0])
-                #     # print(query)
-                #     cursor.execute(d_query)
-                # conn.commit()
-        else:
-            cursor = conn.cursor()
-            cursor.execute(query, val)
-            conn.commit()
+        cursor = conn.cursor()
+        cursor.execute(query, val)
+        conn.commit()
     except Error as error:
         print(error)
         return 0
     finally:
         if cursor:
             cursor.close()
+    return 1
+
+
+class DeleteQuotelog(threading.Thread):
+    def __init__(self, name, threadID):
+        global sqlOption
+        threading.Thread.__init__(self)
+        self.name = name
+        self.threadID = threadID
+        self.time_start = time.time()
+        self.DELETE_TIME_INTERVAL = sqlOption['delete_time_interval']
+        self.MySQLConnection = MySQLConnection
+
+    def run(self):
+        self.time_start = time.time()
+        print("\nStarting thread: " + self.name)
+        self.print_date(self.name, self.threadID)
+        # print("Exiting " + self.name)
+        try:
+            if not self.delete_quotelog():
+                print('Delete quotelog failed')
+        except:
+            print 'delete quotelog failed'
+        print('First Delete - $$$$$$$ Total delete time: {}'.format(time.time() - self.time_start))
+        while True:
+            current_time = time.time()
+            if current_time - self.time_start > int(self.DELETE_TIME_INTERVAL) * 60:
+                try:
+                    if not self.delete_quotelog():
+                        print('Delete quotelog failed')
+                except:
+                    print 'delete quotelog failed'
+                self.time_start = time.time()
+                print('$$$$$$$ Total delete time: {}'.format(self.time_start - current_time))
+            time.sleep(0.5)
+
+    def delete_quotelog(self):
+        global db_config
+        query = "SELECT priceid FROM quotelog WHERE timestamp < (UNIX_TIMESTAMP() - {} * 60)".format(
+            self.DELETE_TIME_INTERVAL)
+        try:
+            connection = self.MySQLConnection(**db_config)
+            cur = connection.cursor()
+            cur.execute(query)
+            result = cur.fetchall()
+            print("$$$$$$$ Total Items from quotelog will delete: {}".format(len(result)))
+            if len(result) > 2:
+                # print('type: {} - {}\n {} - {}'.format(len(result), result, result[0][0], result[-1][0]))
+                d_query = "DELETE FROM quotelog WHERE priceid BETWEEN {} and {}".format(result[0][0], result[-1][0])
+                # print(d_query)
+                cur.execute(d_query)
+            #     for x in result:
+            #         # print(x[0])
+            #         d_query = "DELETE FROM quotelog WHERE priceid={}".format(x[0])
+            #         # print(query)
+            #         cur.execute(d_query)
+                connection.commit()
+        except Exception as e:
+            print e
+            return 0
+        finally:
+            connection.close()
+            cur.close()
+        return 1
+
+    def print_date(self, thread_name, counter):
+        datefields = []
+        today = datetime.datetime.today()
+        datefields.append(today)
+        print("{}[{}]: {}".format(thread_name, counter, datefields[0]))
 
 
 def update_database(f, symbol):
-    global conn, db_config
+    global db_config
     # print(symbol)
     # print(f)
     query = "SELECT * FROM {} WHERE symbol ='{}'".format('quote', symbol)
     try:
         # db_config = read_db_config()
-        # conn = MySQLConnection(**db_config)
+        conn = MySQLConnection(**db_config)
         cursor = conn.cursor()
         cursor.execute(query)
         if len(cursor.fetchall()) == 0:
             # print('Create New %s' % symbol)
-            query_book(f, symbol, 'quote', 'insert')
+            query_book(conn, f, symbol, 'quote', 'insert')
         else:
             # print('%s exist' % symbol)
-            query_book(f, symbol, 'quote', 'update')
+            query_book(conn, f, symbol, 'quote', 'update')
+        # query_book(conn, f, symbol, 'quote', 'update')
 
         # Insert to querylog table
-        query_book(f, symbol, 'quotelog', 'insert')
-        # Delete all row with interval time 5 minutes and limite 500 row
-        query_book(f, symbol, 'quotelog', 'delete')
+        # for s in range(0, 1000):
+        query_book(conn, f, symbol, 'quotelog', 'insert')
     except Error as e:
         print(e)
         return 0
     finally:
         if cursor:
             cursor.close()
-            # conn.close()
-
+        conn.close()
 
 
 def datachanged_on_message(client, userdata, message):
-    # start = time.time()
     msg = str(message.payload.decode("utf-8"))
     my_print(msg)
     # parse json
@@ -156,21 +196,23 @@ def datachanged_on_message(client, userdata, message):
     # print(symbol_data)
     # print(symbol_key)
     # Update to database
-    update_database(symbol_data, symbol_key)
-    my_print('total time of process: {}'.format(time.time() - start))
+    try:
+        update_database(symbol_data, symbol_key)
+    except:
+        print('Update database Error')
 
 
 def on_connect(client, userdata, flags, rc):
     sw_connection_result = {
-        0: "Connection successful",
-        1: "Connection refused - incorrect protocol version",
-        2: "Connection refused - invalid client identifier",
-        3: "Connection refused - server unavailable",
-        4: "Connection refused - bad username or password",
-        5: "Connection refused - not authorised"
+        0: "Rabbit MQTT - Connection successful",
+        1: "Rabbit MQTT - Connection refused - incorrect protocol version",
+        2: "Rabbit MQTT - Connection refused - invalid client identifier",
+        3: "Rabbit MQTT - Connection refused - server unavailable",
+        4: "Rabbit MQTT - Connection refused - bad username or password",
+        5: "Rabbit MQTT - Connection refused - not authorised"
     }
 
-    print(sw_connection_result.get(rc, "Connection refused - Other failed"))
+    print(sw_connection_result.get(rc, "Rabbit MQTT - Connection refused - Other failed"))
     if rc == 0:
         client.subscribe(dataInfo["datachanged_bind_key"], int(dataInfo["datachanged_qos"]))
         print("Subcribe '{}' Success".format(dataInfo["datachanged_bind_Key"]))
@@ -205,11 +247,15 @@ def main():
         print("Connect to server failed, Please check 'host' & 'port' options!")
         exit(-1)
 
-    # c_datachanged.loop_start()
-    c_datachanged.loop_forever()
+    # Start thread - delete quotelog
+    DeleteQuotelog("Delete quotelog", 1).start()
+
+    c_datachanged.loop_start()
+    # c_datachanged.loop_forever()
 
     while 1:
-        time.sleep(1)
+        # print('a')
+        time.sleep(0.5)
 
     print("Closed!")
 
