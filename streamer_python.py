@@ -92,29 +92,15 @@ class DeleteQuotelog(threading.Thread):
         self.MySQLConnection = MySQLConnection
 
     def run(self):
-        self.time_start = time.time()
-        logging.info("Starting thread: " + self.name)
-        # print("{} - "self.name + self.threadID)
-        # print("Exiting " + self.name)
+        logging.info("thread {}-{} started".format(self.name, self.threadID))
         try:
             if not self.delete_quotelog():
                 logging.error('Delete quotelog failed')
-        except:
+        except Error as e:
+            logging.error(e)
             logging.error('delete quotelog failed')
-        logging.info('First Delete - $$$$$$$ Total delete time: {}'.format(time.time() - self.time_start))
-        while whileLoop:
-            current_time = time.time()
-            if current_time - self.time_start > int(self.DELETE_TIME_INTERVAL) * 60:
-                try:
-                    if not self.delete_quotelog():
-                        logging.error('Delete quotelog failed')
-                except:
-                    logging.error('delete quotelog failed')
-                self.time_start = time.time()
-                logging.info('$$$$$$$ Total delete time: {}'.format(self.time_start - current_time))
-            time.sleep(0.5)
-
-        logging.info('thread {} Stopped'.format(self.name))
+        finally:
+            logging.info('thread {}-{} Stopped. Total time: {}'.format(self.name, self.threadID, time.time() - self.time_start))
 
     def delete_quotelog(self):
         global db_config
@@ -251,11 +237,16 @@ def main():
     c_datachanged.loop_start()
     # c_datachanged.loop_forever()
 
-    global whileLoop
+    global whileLoop, DELETE_TIME_INTERVAL
+    start_t = time.time()
     while whileLoop:
         # print('a')
         try:
-            time.sleep(0.5)
+            current_t = time.time()
+            if current_t - start_t > int(DELETE_TIME_INTERVAL)*60:
+                DeleteQuotelog("Delete quotelog", 1).start()
+                start_t = time.time()
+            time.sleep(0.2)
         except KeyboardInterrupt:
             logging.info("User Ctrl + C. Closing program...!")
             whileLoop = False
