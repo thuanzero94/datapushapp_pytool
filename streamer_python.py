@@ -33,13 +33,15 @@ def read_db_config(filename='config.ini', section='sql_info'):
     return db
 
 
+whileLoop = True
+
 uid = time.time()
 logInfo = read_db_config(section='logInfo')
 severInfo = read_db_config(section='serverInfo')
 dataInfo = read_db_config(section='dataInfo')
 sqlOption = read_db_config(section='sql_option')
 DELETE_TIME_INTERVAL = sqlOption['delete_time_interval']
-DELETE_LIMIT = sqlOption['delete_limit']
+# DELETE_LIMIT = sqlOption['delete_limit']
 # print(severInfo)
 # print(dataInfo)
 # print(logInfo)
@@ -47,7 +49,8 @@ DELETE_LIMIT = sqlOption['delete_limit']
 db_config = read_db_config(section='sql_info')
 # conn = MySQLConnection(**db_config)
 
-logging.basicConfig(filename='app.log', filemode='w', level=int(logInfo['level']), format='[%(asctime)s] p%(process)s |%(levelname)s - %(message)s')
+# Configure logging
+logging.basicConfig(filename=logInfo['log_file_name'], filemode='w', level=int(logInfo['level']), format='[%(asctime)s] p%(process)s|%(levelname)s|L_%(lineno)d: %(message)s')
 
 
 def query_book(conn, f, symbol, book='quote', type='insert'):
@@ -99,7 +102,7 @@ class DeleteQuotelog(threading.Thread):
         except:
             logging.error('delete quotelog failed')
         logging.info('First Delete - $$$$$$$ Total delete time: {}'.format(time.time() - self.time_start))
-        while True:
+        while whileLoop:
             current_time = time.time()
             if current_time - self.time_start > int(self.DELETE_TIME_INTERVAL) * 60:
                 try:
@@ -110,6 +113,8 @@ class DeleteQuotelog(threading.Thread):
                 self.time_start = time.time()
                 logging.info('$$$$$$$ Total delete time: {}'.format(self.time_start - current_time))
             time.sleep(0.5)
+
+        logging.info('thread {} Stopped'.format(self.name))
 
     def delete_quotelog(self):
         global db_config
@@ -186,7 +191,8 @@ def datachanged_on_message(client, userdata, message):
     # Update to database
     try:
         update_database(symbol_data, symbol_key)
-    except:
+    except Exception as e:
+        logging.error(e)
         logging.error('Update database Error')
 
 
@@ -212,17 +218,19 @@ def on_disconnect(client, userdata, rc):
 
 
 def main():
-    print("Streamer running, log write to app.log ......")
+    print("Streamer running, log write to {} ......".format(logInfo['log_file_name']))
     # Create a mqtt client object
     try:
         c_datachanged = mqtt.Client(dataInfo["datachanged_queue_name"] + "_" + str(uid))
-    except:
+    except Error as e:
+        logging.error(e)
         logging.error("Initial mqtt Client failed, Please check 'dataInfo' & 'datachanged_queue_name' options!")
         exit(-1)
     # Set username & password
     try:
         c_datachanged.username_pw_set(severInfo["username"], severInfo["password"])
-    except:
+    except Error as e:
+        logging.error(e)
         logging.error("Set Username & Password failed, Please check 'serverInfo' & 'username' & 'password' options!")
         exit(-1)
     # Set the mqtt client other options
@@ -232,7 +240,8 @@ def main():
     # Connect to Server
     try:
         c_datachanged.connect(severInfo["host"], int(severInfo["port"]))
-    except:
+    except Error as e:
+        logging.error(e)
         logging.error("Connect to server failed, Please check 'host' & 'port' options!")
         exit(-1)
 
@@ -242,9 +251,15 @@ def main():
     c_datachanged.loop_start()
     # c_datachanged.loop_forever()
 
-    while 1:
+    global whileLoop
+    while whileLoop:
         # print('a')
-        time.sleep(0.5)
+        try:
+            time.sleep(0.5)
+        except KeyboardInterrupt:
+            logging.info("User Ctrl + C. Closing program...!")
+            whileLoop = False
+            c_datachanged.disconnect()
 
     logging.info("Closed!")
 
