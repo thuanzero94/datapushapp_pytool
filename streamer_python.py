@@ -9,6 +9,7 @@ from mysql.connector import MySQLConnection, Error
 import threading
 import datetime
 import logging
+from logging.handlers import RotatingFileHandler
 
 
 def read_db_config(filename='config.ini', section='sql_info'):
@@ -50,7 +51,15 @@ db_config = read_db_config(section='sql_info')
 # conn = MySQLConnection(**db_config)
 
 # Configure logging
-logging.basicConfig(filename=logInfo['log_file_name'], filemode='w', level=int(logInfo['level']), format='[%(asctime)s] p%(process)s|%(levelname)s|L_%(lineno)d: %(message)s')
+# logging.basicConfig(filename=logInfo['log_file_name'], filemode='w', level=int(logInfo['level']), format='[%(asctime)s] p%(process)s|%(levelname)s|L_%(lineno)d: %(message)s')
+log = logging.getLogger('root')
+log.setLevel(int(logInfo['level']))
+formatter = logging.Formatter('[%(asctime)s] p%(process)s|%(levelname)s|L_%(lineno)d: %(message)s')
+handler = RotatingFileHandler(logInfo['log_file_name'], mode='w', maxBytes=int(logInfo['max_size']) * 1024 * 1024,
+                              backupCount=1, encoding=None, delay=0)
+handler.setFormatter(formatter)
+# handler.setLevel(int(logInfo['level']))
+log.addHandler(handler)
 
 
 def query_book(conn, f, symbol, book='quote', type='insert'):
@@ -73,7 +82,7 @@ def query_book(conn, f, symbol, book='quote', type='insert'):
         cursor.execute(query, val)
         conn.commit()
     except Error as error:
-        logging.error(error)
+        log.error(error)
         return 0
     finally:
         if cursor:
@@ -92,15 +101,16 @@ class DeleteQuotelog(threading.Thread):
         self.MySQLConnection = MySQLConnection
 
     def run(self):
-        logging.info("thread {}-{} started".format(self.name, self.threadID))
+        log.info("thread {}-{} started".format(self.name, self.threadID))
         try:
             if not self.delete_quotelog():
-                logging.error('Delete quotelog failed')
+                log.error('Delete quotelog failed')
         except Error as e:
-            logging.error(e)
-            logging.error('delete quotelog failed')
+            log.error(e)
+            log.error('delete quotelog failed')
         finally:
-            logging.info('thread {}-{} Stopped. Total time: {}'.format(self.name, self.threadID, time.time() - self.time_start))
+            log.info(
+                'thread {}-{} Stopped. Total time: {}'.format(self.name, self.threadID, time.time() - self.time_start))
 
     def delete_quotelog(self):
         global db_config
@@ -111,20 +121,15 @@ class DeleteQuotelog(threading.Thread):
             cur = connection.cursor()
             cur.execute(query)
             result = cur.fetchall()
-            logging.info("$$$$$$$ Total Items from quotelog will delete: {}".format(len(result)))
+            log.info("$$$$$$$ Total Items from quotelog will delete: {}".format(len(result)))
             if len(result) > 2:
                 # print('type: {} - {}\n {} - {}'.format(len(result), result, result[0][0], result[-1][0]))
                 d_query = "DELETE FROM quotelog WHERE priceid BETWEEN {} and {}".format(result[0][0], result[-1][0])
                 # print(d_query)
                 cur.execute(d_query)
-            #     for x in result:
-            #         # print(x[0])
-            #         d_query = "DELETE FROM quotelog WHERE priceid={}".format(x[0])
-            #         # print(query)
-            #         cur.execute(d_query)
                 connection.commit()
         except Exception as e:
-            logging.error(e)
+            log.error(e)
             return 0
         finally:
             connection.close()
@@ -154,7 +159,7 @@ def update_database(f, symbol):
         # for s in range(0, 1000):
         query_book(conn, f, symbol, 'quotelog', 'insert')
     except Error as e:
-        logging.error(e)
+        log.error(e)
         return 0
     finally:
         if cursor:
@@ -164,7 +169,7 @@ def update_database(f, symbol):
 
 def datachanged_on_message(client, userdata, message):
     msg = str(message.payload.decode("utf-8"))
-    logging.debug(msg)
+    log.debug(msg)
     # my_print(msg)
     # parse json
     msg_json = json.loads(msg)
@@ -178,8 +183,8 @@ def datachanged_on_message(client, userdata, message):
     try:
         update_database(symbol_data, symbol_key)
     except Exception as e:
-        logging.error(e)
-        logging.error('Update database Error')
+        log.error(e)
+        log.error('Update database Error')
 
 
 def on_connect(client, userdata, flags, rc):
@@ -192,15 +197,15 @@ def on_connect(client, userdata, flags, rc):
         5: "Rabbit MQTT - Connection refused - not authorised"
     }
 
-    logging.info(sw_connection_result.get(rc, "Rabbit MQTT - Connection refused - Other failed"))
+    log.info(sw_connection_result.get(rc, "Rabbit MQTT - Connection refused - Other failed"))
     if rc == 0:
         client.subscribe(dataInfo["datachanged_bind_key"], int(dataInfo["datachanged_qos"]))
-        logging.info("Subcribe '{}' Success".format(dataInfo["datachanged_bind_Key"]))
+        log.info("Subcribe '{}' Success".format(dataInfo["datachanged_bind_Key"]))
 
 
 def on_disconnect(client, userdata, rc):
     if rc != 0:
-        logging.error("Unexpected MQTT disconnection. Will auto-reconnect")
+        log.error("Unexpected MQTT disconnection. Will auto-reconnect")
 
 
 def main():
@@ -209,15 +214,15 @@ def main():
     try:
         c_datachanged = mqtt.Client(dataInfo["datachanged_queue_name"] + "_" + str(uid))
     except Error as e:
-        logging.error(e)
-        logging.error("Initial mqtt Client failed, Please check 'dataInfo' & 'datachanged_queue_name' options!")
+        log.error(e)
+        log.error("Initial mqtt Client failed, Please check 'dataInfo' & 'datachanged_queue_name' options!")
         exit(-1)
     # Set username & password
     try:
         c_datachanged.username_pw_set(severInfo["username"], severInfo["password"])
     except Error as e:
-        logging.error(e)
-        logging.error("Set Username & Password failed, Please check 'serverInfo' & 'username' & 'password' options!")
+        log.error(e)
+        log.error("Set Username & Password failed, Please check 'serverInfo' & 'username' & 'password' options!")
         exit(-1)
     # Set the mqtt client other options
     c_datachanged.on_message = datachanged_on_message
@@ -227,8 +232,8 @@ def main():
     try:
         c_datachanged.connect(severInfo["host"], int(severInfo["port"]))
     except Error as e:
-        logging.error(e)
-        logging.error("Connect to server failed, Please check 'host' & 'port' options!")
+        log.error(e)
+        log.error("Connect to server failed, Please check 'host' & 'port' options!")
         exit(-1)
 
     # Start thread - delete quotelog
@@ -243,16 +248,16 @@ def main():
         # print('a')
         try:
             current_t = time.time()
-            if current_t - start_t > int(DELETE_TIME_INTERVAL)*60:
+            if current_t - start_t > int(DELETE_TIME_INTERVAL) * 60:
                 DeleteQuotelog("Delete quotelog", 1).start()
                 start_t = time.time()
             time.sleep(0.2)
         except KeyboardInterrupt:
-            logging.info("User Ctrl + C. Closing program...!")
+            log.info("User Ctrl + C. Closing program...!")
             whileLoop = False
             c_datachanged.disconnect()
 
-    logging.info("Closed!")
+    log.info("Closed!")
 
 
 if __name__ == "__main__":
