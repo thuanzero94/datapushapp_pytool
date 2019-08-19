@@ -66,16 +66,16 @@ def query_book(conn, f, symbol, book='quote', type='insert'):
     if book == 'quote':
         if type == 'insert':
             query = "INSERT INTO quote(`symbol`, `bid`, `last`, `ask`, `change`, `high`, `low`, `open`, `prev_close`, `time`, `timestamp`)" \
-                    "VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), UNIX_TIMESTAMP())"
+                    "VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, UTC_TIMESTAMP(), UNIX_TIMESTAMP())"
             val = (symbol, f['bid'], f['last'], f['ask'], f['change'], f['high'], f['low'], f['open'], f['close'])
         elif type == 'update':
-            query = "UPDATE quote SET `bid`=%s, `last`=%s, `ask`=%s, `change`=%s, `high`=%s, `low`=%s, `open`=%s, `prev_close`=%s, `time`=NOW(), `timestamp`=UNIX_TIMESTAMP()" \
+            query = "UPDATE quote SET `bid`=%s, `last`=%s, `ask`=%s, `change`=%s, `high`=%s, `low`=%s, `open`=%s, `prev_close`=%s, `time`=UTC_TIMESTAMP(), `timestamp`=UNIX_TIMESTAMP()" \
                     "WHERE `symbol`=%s"
             val = (f['bid'], f['last'], f['ask'], f['change'], f['high'], f['low'], f['open'], f['close'], symbol)
     elif book == 'quotelog':
         if type == 'insert':
             query = "INSERT INTO quotelog(`symbol`, `bid`, `last`, `ask`, `change`, `high`, `low`, `open`, `prev_close`, `time`, `timestamp`)" \
-                    "VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), UNIX_TIMESTAMP())"
+                    "VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, UTC_TIMESTAMP(), UNIX_TIMESTAMP())"
             val = (symbol, f['bid'], f['last'], f['ask'], f['change'], f['high'], f['low'], f['open'], f['close'])
     try:
         cursor = conn.cursor()
