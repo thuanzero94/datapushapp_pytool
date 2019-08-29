@@ -90,6 +90,58 @@ def query_book(conn, f, symbol, book='quote', type='insert'):
     return 1
 
 
+class UpdateDatabase(threading.Thread):
+    def __init__(self, name, f, symbol):
+        threading.Thread.__init__(self)
+        self.name = name
+        self.data = f
+        self.symbol = symbol
+        self.time_start = time.time()
+        self.sql = MySQLConnection
+
+    def run(self):
+        # log.info("thread {} started".format(self.name))
+        try:
+            if not self.update_database(self.data, self.symbol):
+                log.error('update db failed')
+        except Error as e:
+            log.error(e)
+            log.error('update db failed')
+        finally:
+            log.debug(
+                'thread {}, Total time: {}'.format(self.name, time.time() - self.time_start))
+
+    def update_database(self, f, symbol):
+        global db_config
+        # print(symbol)
+        # print(f)
+        query = "SELECT * FROM {} WHERE symbol ='{}'".format('quote', symbol)
+        try:
+            # db_config = read_db_config()
+            conn = self.sql(**db_config)
+            cursor = conn.cursor()
+            cursor.execute(query)
+            if len(cursor.fetchall()) == 0:
+                # print('Create New %s' % symbol)
+                query_book(conn, f, symbol, 'quote', 'insert')
+            else:
+                # print('%s exist' % symbol)
+                query_book(conn, f, symbol, 'quote', 'update')
+            # query_book(conn, f, symbol, 'quote', 'update')
+
+            # Insert to querylog table
+            # for s in range(0, 1000):
+            query_book(conn, f, symbol, 'quotelog', 'insert')
+        except Error as e:
+            log.error(e)
+            return 0
+        finally:
+            if cursor:
+                cursor.close()
+            conn.close()
+        return 1
+
+
 class DeleteQuotelog(threading.Thread):
     def __init__(self, name, threadID):
         global sqlOption
@@ -137,35 +189,6 @@ class DeleteQuotelog(threading.Thread):
         return 1
 
 
-def update_database(f, symbol):
-    global db_config
-    # print(symbol)
-    # print(f)
-    query = "SELECT * FROM {} WHERE symbol ='{}'".format('quote', symbol)
-    try:
-        # db_config = read_db_config()
-        conn = MySQLConnection(**db_config)
-        cursor = conn.cursor()
-        cursor.execute(query)
-        if len(cursor.fetchall()) == 0:
-            # print('Create New %s' % symbol)
-            query_book(conn, f, symbol, 'quote', 'insert')
-        else:
-            # print('%s exist' % symbol)
-            query_book(conn, f, symbol, 'quote', 'update')
-        # query_book(conn, f, symbol, 'quote', 'update')
-
-        # Insert to querylog table
-        # for s in range(0, 1000):
-        query_book(conn, f, symbol, 'quotelog', 'insert')
-    except Error as e:
-        log.error(e)
-        return 0
-    finally:
-        if cursor:
-            cursor.close()
-        conn.close()
-
 
 def datachanged_on_message(client, userdata, message):
     msg = str(message.payload.decode("utf-8"))
@@ -181,7 +204,8 @@ def datachanged_on_message(client, userdata, message):
     # print(symbol_key)
     # Update to database
     try:
-        update_database(symbol_data, symbol_key)
+        # update_database(symbol_data, symbol_key)
+        UpdateDatabase("Update quote", symbol_data, symbol_key).start()
     except Exception as e:
         log.error(e)
         log.error('Update database Error')
