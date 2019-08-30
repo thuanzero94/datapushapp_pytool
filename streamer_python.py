@@ -42,6 +42,7 @@ severInfo = read_db_config(section='serverInfo')
 dataInfo = read_db_config(section='dataInfo')
 sqlOption = read_db_config(section='sql_option')
 DELETE_TIME_INTERVAL = sqlOption['delete_time_interval']
+start_t = time.time()
 # DELETE_LIMIT = sqlOption['delete_limit']
 # print(severInfo)
 # print(dataInfo)
@@ -191,6 +192,7 @@ class DeleteQuotelog(threading.Thread):
 
 
 def datachanged_on_message(client, userdata, message):
+    global start_t, DELETE_TIME_INTERVAL
     msg = str(message.payload.decode("utf-8"))
     log.debug(msg)
     # my_print(msg)
@@ -206,6 +208,11 @@ def datachanged_on_message(client, userdata, message):
     try:
         # update_database(symbol_data, symbol_key)
         UpdateDatabase("Update quote", symbol_data, symbol_key).start()
+        # Check Delete Quotelog
+        current_t = time.time()
+        if current_t - start_t > int(DELETE_TIME_INTERVAL) * 60:
+            DeleteQuotelog("Delete quotelog", 1).start()
+            start_t = time.time()
     except Exception as e:
         log.error(e)
         log.error('Update database Error')
@@ -267,14 +274,10 @@ def main():
     # c_datachanged.loop_forever()
 
     global whileLoop, DELETE_TIME_INTERVAL
-    start_t = time.time()
+
     while whileLoop:
         # print('a')
         try:
-            current_t = time.time()
-            if current_t - start_t > int(DELETE_TIME_INTERVAL) * 60:
-                DeleteQuotelog("Delete quotelog", 1).start()
-                start_t = time.time()
             time.sleep(0.2)
         except KeyboardInterrupt:
             log.info("User Ctrl + C. Closing program...!")
