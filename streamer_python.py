@@ -43,6 +43,7 @@ dataInfo = read_db_config(section='dataInfo')
 sqlOption = read_db_config(section='sql_option')
 DELETE_TIME_INTERVAL = sqlOption['delete_time_interval']
 start_t = time.time()
+delete_counter = 0
 # DELETE_LIMIT = sqlOption['delete_limit']
 # print(severInfo)
 # print(dataInfo)
@@ -56,6 +57,7 @@ db_config = read_db_config(section='sql_info')
 log = logging.getLogger('root')
 log.setLevel(int(logInfo['level']))
 formatter = logging.Formatter('[%(asctime)s] p%(process)s|%(levelname)s|L_%(lineno)d: %(message)s')
+formatter.converter = time.gmtime
 handler = RotatingFileHandler(logInfo['log_file_name'], mode='w', maxBytes=int(logInfo['max_size']) * 1024 * 1024,
                               backupCount=1, encoding=None, delay=0)
 handler.setFormatter(formatter)
@@ -63,21 +65,25 @@ handler.setFormatter(formatter)
 log.addHandler(handler)
 
 
-def query_book(conn, f, symbol, book='quote', type='insert'):
+def query_book(conn, f, symbol, book='quote', q_type='insert'):
     if book == 'quote':
-        if type == 'insert':
+        if q_type == 'insert':
             query = "INSERT INTO quote(`symbol`, `bid`, `last`, `ask`, `change`, `high`, `low`, `open`, `prev_close`, `time`, `timestamp`)" \
                     "VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, UTC_TIMESTAMP(), UNIX_TIMESTAMP())"
             val = (symbol, f['bid'], f['last'], f['ask'], f['change'], f['high'], f['low'], f['open'], f['close'])
-        elif type == 'update':
+        elif q_type == 'update':
             query = "UPDATE quote SET `bid`=%s, `last`=%s, `ask`=%s, `change`=%s, `high`=%s, `low`=%s, `open`=%s, `prev_close`=%s, `time`=UTC_TIMESTAMP(), `timestamp`=UNIX_TIMESTAMP()" \
                     "WHERE `symbol`=%s"
             val = (f['bid'], f['last'], f['ask'], f['change'], f['high'], f['low'], f['open'], f['close'], symbol)
     elif book == 'quotelog':
-        if type == 'insert':
+        if q_type == 'insert':
             query = "INSERT INTO quotelog(`symbol`, `bid`, `last`, `ask`, `change`, `high`, `low`, `open`, `prev_close`, `time`, `timestamp`)" \
                     "VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, UTC_TIMESTAMP(), UNIX_TIMESTAMP())"
             val = (symbol, f['bid'], f['last'], f['ask'], f['change'], f['high'], f['low'], f['open'], f['close'])
+    log.info('---------------------------------------------------')
+    log.info('[QUERY-{}-{}]{}'.format(book, q_type, query))
+    log.info('[VALUES-{}-{}]{}'.format(book, q_type, val))
+    log.info('---------------------------------------------------')
     try:
         cursor = conn.cursor()
         cursor.execute(query, val)
@@ -132,14 +138,17 @@ class UpdateDatabase(threading.Thread):
 
             # Insert to querylog table
             # for s in range(0, 1000):
-            query_book(conn, f, symbol, 'quotelog', 'insert')
+            # query_book(conn, f, symbol, 'quotelog', 'insert')
         except Error as e:
             log.error(e)
             return 0
         finally:
-            if cursor:
-                cursor.close()
-            conn.close()
+            try:
+                if cursor:
+                    cursor.close()
+                conn.close()
+            except Exception as e:
+                log.error(e)
         return 1
 
 
@@ -175,7 +184,7 @@ class DeleteQuotelog(threading.Thread):
             cur.execute(query)
             result = cur.fetchall()
             log.info("$$$$$$$ Total Items from quotelog will delete: {}".format(len(result)))
-            if len(result) > 2:
+            if len(result) > 999:
                 # print('type: {} - {}\n {} - {}'.format(len(result), result, result[0][0], result[-1][0]))
                 d_query = "DELETE FROM quotelog WHERE priceid BETWEEN {} and {}".format(result[0][0], result[-1][0])
                 # print(d_query)
@@ -185,14 +194,16 @@ class DeleteQuotelog(threading.Thread):
             log.error(e)
             return 0
         finally:
-            connection.close()
-            cur.close()
+            try:
+                connection.close()
+                cur.close()
+            except Exception as e:
+                log.error(e)
         return 1
 
 
-
 def datachanged_on_message(client, userdata, message):
-    global start_t, DELETE_TIME_INTERVAL
+    global start_t, DELETE_TIME_INTERVAL, delete_counter
     msg = str(message.payload.decode("utf-8"))
     log.debug(msg)
     # my_print(msg)
@@ -208,11 +219,15 @@ def datachanged_on_message(client, userdata, message):
     try:
         # update_database(symbol_data, symbol_key)
         UpdateDatabase("Update quote", symbol_data, symbol_key).start()
+        # delete_counter += 1
         # Check Delete Quotelog
-        current_t = time.time()
-        if current_t - start_t > int(DELETE_TIME_INTERVAL) * 60:
-            DeleteQuotelog("Delete quotelog", 1).start()
-            start_t = time.time()
+        # current_t = time.time()
+        # if delete_counter > 1000:
+        #     gmt_wday = time.gmtime().tm_wday
+        #     if gmt_wday != 5 and gmt_wday != 6:
+        #         DeleteQuotelog("Delete quotelog", 1).start()
+        #     delete_counter = 0
+        #     # start_t = time.time()
     except Exception as e:
         log.error(e)
         log.error('Update database Error')
